@@ -1,4 +1,4 @@
-module github.com/dagger/dagger/dev/alpine
+module github.com/dagger/alpine
 
 go 1.26.1
 
