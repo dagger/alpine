@@ -1,2 +1,2 @@
 [modules.go]
-source = "dagger.io/go@main"
+source = "dagger.io/go"
