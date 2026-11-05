@@ -11,8 +11,12 @@ import (
 )
 
 // An Alpine Linux configuration
-type Alpine struct { // alpine (../../../../:0:0)
+type Alpine struct { // alpine (../../:0:0)
 	query *querybuilder.Selection
+	// refetchID is set when this object is built through a field marked
+	// @reevaluate: it fetches its ID on every use, so each use evaluates that
+	// field again.
+	refetchID bool
 
 	arch   *string
 	branch *string
@@ -23,6 +27,9 @@ type Alpine struct { // alpine (../../../../:0:0)
 func (r *Alpine) WithGraphQLQuery(q *querybuilder.Selection) *Alpine {
 	return &Alpine{
 		query: q,
+		// The query's origin is unknown: it may go through a field that
+		// must be reevaluated.
+		refetchID: true,
 	}
 }
 
@@ -56,9 +63,7 @@ func (r *Alpine) Branch(ctx context.Context) (string, error) {
 func (r *Alpine) Container() *Container {
 	q := r.query.Select("container")
 
-	return &Container{
-		query: q,
-	}
+	return new(Container).WithGraphQLQuery(q)
 }
 
 // The distro to use
@@ -104,7 +109,13 @@ func (r *Alpine) ID(ctx context.Context) (ID, error) {
 	var response ID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	if r.refetchID {
+		return response, q.Execute(ctx)
+	}
+	return memoizedID(ctx, r.query, func() (ID, error) {
+		err := q.Execute(ctx)
+		return response, err
+	})
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -139,7 +150,7 @@ func (r *Alpine) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = Alpine{query: selectNode(dag.query, id, "Alpine")}
+	*r = Alpine{query: selectNode(Connect().QueryBuilder(), id, "Alpine")}
 	return nil
 }
 
@@ -173,7 +184,7 @@ type AlpineOpts struct {
 	Distro AlpineDistro
 }
 
-func (r *Query) Alpine(opts ...AlpineOpts) *Alpine { // alpine (../../../../:0:0)
+func (r *Query) Alpine(opts ...AlpineOpts) *Alpine { // alpine (../../:0:0)
 	q := r.query.Select("alpine")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `arch` optional argument
@@ -203,11 +214,12 @@ func (r *Query) Alpine(opts ...AlpineOpts) *Alpine { // alpine (../../../../:0:0
 	}
 
 	return &Alpine{
-		query: q,
+		query:     q,
+		refetchID: r.refetchID,
 	}
 }
 
-type AlpineDistro string // alpine (../../../../:0:0)
+type AlpineDistro string // alpine (../../:0:0)
 
 func (AlpineDistro) IsEnum() {}
 

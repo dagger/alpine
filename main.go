@@ -14,6 +14,7 @@ import (
 	"time"
 
 	goapk "chainguard.dev/apko/pkg/apk/apk"
+	"dagger.io/dagger/core"
 	"github.com/dagger/alpine/internal/dagger"
 	"golang.org/x/mod/semver"
 	"golang.org/x/sync/errgroup"
@@ -151,7 +152,7 @@ func (m *Alpine) Container(ctx context.Context) (*dagger.Container, error) {
 	}
 	pkgResolver := goapk.NewPkgResolver(ctx, indexes)
 
-	ctr := dag.Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + m.GoArch)})
+	ctr := core.NewContainer(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + m.GoArch)})
 	allPkgs := make([]string, 0, len(m.Packages)+len(basePkgs))
 	allPkgs = append(allPkgs, basePkgs...)
 	allPkgs = append(allPkgs, m.Packages...)
@@ -201,7 +202,7 @@ func (m *Alpine) withPkgs(
 		fmt.Printf("unfatal package conflicts: %v\n", conflicts)
 	}
 
-	setupBase := dag.Container().From("busybox")
+	setupBase := core.NewContainer().From("busybox")
 
 	type apkPkg struct {
 		name string
@@ -217,8 +218,8 @@ func (m *Alpine) withPkgs(
 			outDir := "/out"
 
 			unpacked := setupBase.
-				WithMountedFile(mntPath, dag.HTTP(url)).
-				WithMountedDirectory(outDir, dag.Directory()).
+				WithMountedFile(mntPath, core.HTTP(url)).
+				WithMountedDirectory(outDir, core.NewDirectory()).
 				WithWorkdir(outDir).
 				WithExec([]string{"tar", "-xf", mntPath, "--exclude=.*"})
 
