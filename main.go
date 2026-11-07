@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"path/filepath"
 	"runtime"
-	"slices"
 	"strings"
 	"time"
 
@@ -17,7 +16,6 @@ import (
 	"dagger.io/dagger/core"
 	"github.com/dagger/alpine/internal/dagger"
 	"golang.org/x/mod/semver"
-	"golang.org/x/sync/errgroup"
 )
 
 type Distro string
@@ -209,54 +207,59 @@ func (m *Alpine) withPkgs(
 		dir  *dagger.Directory
 	}
 
-	var eg errgroup.Group
+	// Nothing here reads a package, so nothing is unpacked until something
+	// needs the container's files. Each package's unpack stays its own result,
+	// shared by every image that installs that package.
 	alpinePkgs := make([]*apkPkg, len(repoPkgs))
 	for i, pkg := range repoPkgs {
-		eg.Go(func() error {
-			url := pkg.URL()
-			mntPath := filepath.Join("/mnt", filepath.Base(url))
-			outDir := "/out"
+		url := pkg.URL()
+		mntPath := filepath.Join("/mnt", filepath.Base(url))
+		outDir := "/out"
 
-			unpacked := setupBase.
-				WithMountedFile(mntPath, core.HTTP(url)).
-				WithMountedDirectory(outDir, core.NewDirectory()).
-				WithWorkdir(outDir).
-				WithExec([]string{"tar", "-xf", mntPath, "--exclude=.*"})
+		unpacked := setupBase.
+			WithMountedFile(mntPath, core.HTTP(url)).
+			WithMountedDirectory(outDir, core.NewDirectory()).
+			WithWorkdir(outDir).
+			WithExec([]string{"tar", "-xf", mntPath, "--exclude=.*"})
 
-			alpinePkg := &apkPkg{
-				name: pkg.PackageName(),
-				dir:  unpacked.Directory(outDir),
-			}
+		dir := unpacked.Directory(outDir)
 
-			entries, err := alpinePkg.dir.Entries(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get alpine package entries: %w", err)
-			}
+		// HACK: /lib64 is a link, so don't overwrite it
+		// - wolfi-baselayout links /lib64 -> /lib
+		// - ld-linux installs to /lib64
+		// TODO: this should *probably* apply to /usr/lib64/ and
+		// /usr/local/lib64/ as well
+		//
+		// Checking whether the package has a lib64 would unpack it now, so the
+		// move applies to every package: a step after the unpack makes sure
+		// lib64 exists, which leaves the unpack the result every image shares.
+		// A lib64 link is left alone, to be resolved inside the package as
+		// before. A package with neither lib nor lib64 now carries an empty lib.
+		if m.Distro == DistroWolfi && pkg.PackageName() != "wolfi-baselayout" {
+			dir = unpacked.WithExec([]string{"sh", "-c", "[ -L lib64 ] || mkdir -p lib64"}).Directory(outDir)
+			dir = dir.
+				WithDirectory("/lib", dir.Directory("/lib64")).
+				WithoutDirectory("/lib64")
+		}
 
-			// HACK: /lib64 is a link, so don't overwrite it
-			// - wolfi-baselayout links /lib64 -> /lib
-			// - ld-linux installs to /lib64
-			// TODO: this should *probably* apply to /usr/lib64/ and
-			// /usr/local/lib64/ as well
-			if m.Distro == DistroWolfi && pkg.PackageName() != "wolfi-baselayout" {
-				if slices.Contains(entries, "lib64/") || slices.Contains(entries, "lib64") {
-					alpinePkg.dir = alpinePkg.dir.
-						WithDirectory("/lib", alpinePkg.dir.Directory("/lib64")).
-						WithoutDirectory("/lib64")
-				}
-			}
-
-			alpinePkgs[i] = alpinePkg
-			return nil
-		})
-	}
-	if err := eg.Wait(); err != nil {
-		return nil, fmt.Errorf("failed to get alpine packages: %w", err)
+		alpinePkgs[i] = &apkPkg{
+			name: pkg.PackageName(),
+			dir:  dir,
+		}
 	}
 
+	// Layering a package onto a container that has nothing left to run copies
+	// it at once, so the packages up to busybox are stacked as a directory and
+	// become the root filesystem in one lazy step. Later packages layer onto
+	// the busybox exec, which is still to run.
 	installBusyboxSymlinks := false
+	rootfs := core.NewDirectory()
 	for _, pkg := range alpinePkgs {
-		ctr = ctr.WithDirectory("/", pkg.dir)
+		if installBusyboxSymlinks {
+			ctr = ctr.WithDirectory("/", pkg.dir)
+			continue
+		}
+		rootfs = rootfs.WithDirectory("/", pkg.dir)
 
 		if pkg.name == "busybox" || pkg.name == "busybox-full" {
 			// We copy apko and don't run scripts, but with a special exception for busybox,
@@ -267,7 +270,7 @@ func (m *Alpine) withPkgs(
 			// This is load-bearing for the corner case of the engine having custom CA certs that
 			// it will try to install in this container if/when the ca-certificates package is
 			// installed.
-			ctr = ctr.WithExec([]string{"/bin/busybox", "--install", "-s"})
+			ctr = ctr.WithRootfs(rootfs).WithExec([]string{"/bin/busybox", "--install", "-s"})
 		}
 	}
 
@@ -275,6 +278,8 @@ func (m *Alpine) withPkgs(
 	// normally only created after /etc/busybox-paths.d/busybox is updated
 	if installBusyboxSymlinks {
 		ctr = ctr.WithExec([]string{"/bin/busybox", "--install", "-s"})
+	} else {
+		ctr = ctr.WithRootfs(rootfs)
 	}
 
 	return ctr, nil

@@ -26,31 +26,31 @@ type Entrypoint implements ModuleEntrypoint {
 
   pub types: [TypeDef!]! {
     [
-      typeDef.withObject("Alpine", description: "An Alpine Linux configuration", sourceMap: sourceMap("main.go", 86, 6))
+      typeDef.withObject("Alpine", description: "An Alpine Linux configuration", sourceMap: sourceMap("main.go", 84, 6))
         .withFunction(
           function("Container", typeDef.withObject("Container"))
             .withDescription("Build an Alpine Linux container")
-            .withSourceMap(sourceMap("main.go", 106, 1))
+            .withSourceMap(sourceMap("main.go", 104, 1))
         )
-        .withField("Distro", typeDef.withEnum("Distro"), description: "The distro to use", sourceMap: sourceMap("main.go", 88, 2))
-        .withField("Arch", typeDef.withKind(TypeDefKind.STRING_KIND), description: "The hardware architecture to build for", sourceMap: sourceMap("main.go", 90, 2))
-        .withField("Branch", typeDef.withKind(TypeDefKind.STRING_KIND), description: "The Alpine branch to download packages from", sourceMap: sourceMap("main.go", 92, 2))
-        .withField("Packages", typeDef.withListOf(typeDef.withKind(TypeDefKind.STRING_KIND)), description: "The APK packages to install", sourceMap: sourceMap("main.go", 94, 2))
-        .withField("ExtraRepositories", typeDef.withListOf(typeDef.withKind(TypeDefKind.STRING_KIND)), description: "Extra repositories to add to the package resolver", sourceMap: sourceMap("main.go", 96, 2))
-        .withField("ExtraKeyURLs", typeDef.withListOf(typeDef.withKind(TypeDefKind.STRING_KIND)), description: "Where to download additional keys from", sourceMap: sourceMap("main.go", 98, 2))
+        .withField("Distro", typeDef.withEnum("Distro"), description: "The distro to use", sourceMap: sourceMap("main.go", 86, 2))
+        .withField("Arch", typeDef.withKind(TypeDefKind.STRING_KIND), description: "The hardware architecture to build for", sourceMap: sourceMap("main.go", 88, 2))
+        .withField("Branch", typeDef.withKind(TypeDefKind.STRING_KIND), description: "The Alpine branch to download packages from", sourceMap: sourceMap("main.go", 90, 2))
+        .withField("Packages", typeDef.withListOf(typeDef.withKind(TypeDefKind.STRING_KIND)), description: "The APK packages to install", sourceMap: sourceMap("main.go", 92, 2))
+        .withField("ExtraRepositories", typeDef.withListOf(typeDef.withKind(TypeDefKind.STRING_KIND)), description: "Extra repositories to add to the package resolver", sourceMap: sourceMap("main.go", 94, 2))
+        .withField("ExtraKeyURLs", typeDef.withListOf(typeDef.withKind(TypeDefKind.STRING_KIND)), description: "Where to download additional keys from", sourceMap: sourceMap("main.go", 96, 2))
         .withConstructor(
           function("", typeDef.withObject("Alpine"))
-            .withSourceMap(sourceMap("main.go", 30, 1))
-            .withArg("arch", typeDef.withKind(TypeDefKind.STRING_KIND).withOptional(true), description: "Hardware architecture to build for", sourceMap: sourceMap("main.go", 33, 2))
-            .withArg("branch", typeDef.withKind(TypeDefKind.STRING_KIND).withOptional(true), description: "Alpine branch to download packages from", defaultValue: ("\"edge\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 37, 2))
-            .withArg("packages", typeDef.withListOf(typeDef.withKind(TypeDefKind.STRING_KIND)).withOptional(true), description: "APK packages to install", sourceMap: sourceMap("main.go", 40, 2))
-            .withArg("extraRepositories", typeDef.withListOf(typeDef.withKind(TypeDefKind.STRING_KIND)).withOptional(true), description: "Extra repositories to add to the package resolver", sourceMap: sourceMap("main.go", 43, 2))
-            .withArg("extraKeyURLs", typeDef.withListOf(typeDef.withKind(TypeDefKind.STRING_KIND)).withOptional(true), description: "Extra keys needed to authenticate the extra repositories", sourceMap: sourceMap("main.go", 46, 2))
-            .withArg("distro", typeDef.withEnum("Distro").withOptional(true), description: "Alpine distribution to use", defaultValue: ("\"Alpine\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 51, 2))
+            .withSourceMap(sourceMap("main.go", 28, 1))
+            .withArg("arch", typeDef.withKind(TypeDefKind.STRING_KIND).withOptional(true), description: "Hardware architecture to build for", sourceMap: sourceMap("main.go", 31, 2))
+            .withArg("branch", typeDef.withKind(TypeDefKind.STRING_KIND).withOptional(true), description: "Alpine branch to download packages from", defaultValue: ("\"edge\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 35, 2))
+            .withArg("packages", typeDef.withListOf(typeDef.withKind(TypeDefKind.STRING_KIND)).withOptional(true), description: "APK packages to install", sourceMap: sourceMap("main.go", 38, 2))
+            .withArg("extraRepositories", typeDef.withListOf(typeDef.withKind(TypeDefKind.STRING_KIND)).withOptional(true), description: "Extra repositories to add to the package resolver", sourceMap: sourceMap("main.go", 41, 2))
+            .withArg("extraKeyURLs", typeDef.withListOf(typeDef.withKind(TypeDefKind.STRING_KIND)).withOptional(true), description: "Extra keys needed to authenticate the extra repositories", sourceMap: sourceMap("main.go", 44, 2))
+            .withArg("distro", typeDef.withEnum("Distro").withOptional(true), description: "Alpine distribution to use", defaultValue: ("\"Alpine\"" :: Dagger.JSON!), sourceMap: sourceMap("main.go", 49, 2))
         ),
-      typeDef.withEnum("Distro", sourceMap: sourceMap("main.go", 23, 6))
-        .withEnumMember("Alpine", value: "ALPINE", sourceMap: sourceMap("main.go", 26, 2))
-        .withEnumMember("Wolfi", value: "WOLFI", sourceMap: sourceMap("main.go", 27, 2))
+      typeDef.withEnum("Distro", sourceMap: sourceMap("main.go", 21, 6))
+        .withEnumMember("Alpine", value: "ALPINE", sourceMap: sourceMap("main.go", 24, 2))
+        .withEnumMember("Wolfi", value: "WOLFI", sourceMap: sourceMap("main.go", 25, 2))
     ]
   }
 
