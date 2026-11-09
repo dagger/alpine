@@ -1,4 +1,5 @@
 name = "alpine"
+include = []
 
 [entrypoint]
   kind = "dang"

@@ -4,7 +4,7 @@ go 1.27
 
 require (
 	chainguard.dev/apko v1.2.9
-	dagger.io/dagger v1.0.0-beta.24
+	dagger.io/dagger v1.0.0-beta.25
 	github.com/Khan/genqlient v0.8.1
 	github.com/dagger/otel-go v1.43.0
 	github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59
