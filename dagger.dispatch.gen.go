@@ -41,6 +41,7 @@ type functionSpec struct {
 var functions = []functionSpec{
 	{Name: "alpine", Receiver: "Alpine", FnName: "", Args: map[string]argumentSpec{"arch": {Required: false, Default: "", Encoding: "string"}, "branch": {Required: false, Default: "\"edge\"", Encoding: "string"}, "packages": {Required: false, Default: "", Encoding: "json"}, "extraRepositories": {Required: false, Default: "", Encoding: "json"}, "extraKeyURLs": {Required: false, Default: "", Encoding: "json"}, "distro": {Required: false, Default: "\"Alpine\"", Encoding: "string"}}},
 	{Name: "container", Receiver: "Alpine", FnName: "Container", Args: map[string]argumentSpec{}},
+	{Name: "resolve", Receiver: "Alpine", FnName: "Resolve", Args: map[string]argumentSpec{}},
 }
 
 func main() {

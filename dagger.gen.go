@@ -155,6 +155,13 @@ func DaggerDispatch(ctx context.Context, parentJSON []byte, parentName string, f
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*Alpine).Container(&parent, ctx)
+		case "Resolve":
+			var parent Alpine
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Alpine).Resolve(&parent, ctx)
 		case "":
 			var parent Alpine
 			err = json.Unmarshal(parentJSON, &parent)

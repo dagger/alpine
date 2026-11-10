@@ -164,6 +164,19 @@ func (r *Alpine) Packages(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx)
 }
 
+// Resolve the packages Container would install, with all their dependencies,
+// to the exact versions the repositories offer now. Each entry is
+// "name=version", so passing the result back as packages installs this same
+// set for as long as the repositories keep these versions.
+func (r *Alpine) Resolve(ctx context.Context) ([]string, error) {
+	q := r.query.Select("resolve")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // AlpineOpts contains options for Query.Alpine
 type AlpineOpts struct {
 	// Hardware architecture to build for
