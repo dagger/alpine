@@ -1,2 +1,16 @@
 [modules.go]
 source = "dagger.io/go"
+
+[modules.go-sdk]
+source = "github.com/dagger/go-sdk@d43dbee8fc4b4ed8c250f3b24516af3ed3f41dbe"
+
+[sdks.go]
+module = "go-sdk"
+
+[sdks.go.scopes."."]
+is-module = true
+name = "alpine"
+
+[sdks.go.scopes.".".settings]
+dangEntrypoint = true
+unifiedClients = true

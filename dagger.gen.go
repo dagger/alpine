@@ -6,32 +6,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
-	"os"
-	"sort"
 
-	telemetry "github.com/dagger/otel-go"
-	"github.com/vektah/gqlparser/v2/gqlerror"
+	"github.com/dagger/querybuilder"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/sdk/resource"
-	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/alpine/internal/dagger"
-
-	"github.com/dagger/querybuilder"
 )
-
-var dag = dagger.Connect()
 
 func Tracer() trace.Tracer {
 	return otel.Tracer("dagger.io/sdk.go")
 }
 
-// used for local MarshalJSON implementations
 var marshalCtx = context.Background()
 
-// called by main()
 func setMarshalContext(ctx context.Context) {
 	marshalCtx = ctx
 	dagger.SetMarshalContext(ctx)
@@ -44,13 +32,8 @@ type DaggerObject interface {
 
 type ExecError = dagger.ExecError
 
-// ptr returns a pointer to the given value.
-func ptr[T any](v T) *T {
-	return &v
-}
+func ptr[T any](v T) *T { return &v }
 
-// convertSlice converts a slice of one type to a slice of another type using a
-// converter function
 func convertSlice[I any, O any](in []I, f func(I) O) []O {
 	out := make([]O, len(in))
 	for i, v := range in {
@@ -149,124 +132,21 @@ func (r *Distro) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-func main() {
-	ctx := context.Background()
-
-	// Direct slog to the new stderr. This is only for dev time debugging, and
-	// runtime errors/warnings.
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelWarn,
-	})))
-
-	if err := dispatch(ctx); err != nil {
-		os.Exit(2)
-	}
-}
-
-func convertError(rerr error) *dagger.Error {
-	if gqlErr := findSingleGQLError(rerr); gqlErr != nil {
-		dagErr := dag.Error(gqlErr.Message)
-		if gqlErr.Extensions != nil {
-			keys := make([]string, 0, len(gqlErr.Extensions))
-			for k := range gqlErr.Extensions {
-				keys = append(keys, k)
-			}
-			sort.Strings(keys)
-			for _, k := range keys {
-				val, err := json.Marshal(gqlErr.Extensions[k])
-				if err != nil {
-					fmt.Println("failed to marshal error value:", err)
-				}
-				dagErr = dagErr.WithValue(k, dagger.JSON(val))
-			}
-		}
-		return dagErr
-	}
-	return dag.Error(rerr.Error())
-}
-
-func findSingleGQLError(rerr error) *gqlerror.Error {
-	switch x := rerr.(type) {
-	case *gqlerror.Error:
-		return x
-	case interface{ Unwrap() []error }:
-		return nil
-	case interface{ Unwrap() error }:
-		return findSingleGQLError(x.Unwrap())
-	default:
-		return nil
-	}
-}
-func dispatch(ctx context.Context) (rerr error) {
-	ctx = telemetry.InitEmbedded(ctx, resource.NewWithAttributes(
-		semconv.SchemaURL,
-		semconv.ServiceNameKey.String("dagger-go-sdk"),
-		// TODO version?
-	))
-	defer telemetry.Close()
-
-	// A lot of the "work" actually happens when we're marshalling the return
-	// value, which entails getting object IDs, which happens in MarshalJSON,
-	// which has no ctx argument, so we use this lovely global variable.
+func DaggerDispatch(ctx context.Context, parentJSON []byte, parentName string, fnName string, inputArgs map[string][]byte) (_ any, err error) {
 	setMarshalContext(ctx)
-
-	fnCall := dag.CurrentFunctionCall()
-	defer func() {
-		if rerr != nil {
-			if err := fnCall.ReturnError(ctx, convertError(rerr)); err != nil {
-				fmt.Println("failed to return error:", err, "\noriginal error:", rerr)
-			}
-		}
-	}()
-
-	parentName, err := fnCall.ParentName(ctx)
-	if err != nil {
-		return fmt.Errorf("get parent name: %w", err)
-	}
-	fnName, err := fnCall.Name(ctx)
-	if err != nil {
-		return fmt.Errorf("get fn name: %w", err)
-	}
-	parentJson, err := fnCall.Parent(ctx)
-	if err != nil {
-		return fmt.Errorf("get fn parent: %w", err)
-	}
-	fnArgs, err := fnCall.InputArgs(ctx)
-	if err != nil {
-		return fmt.Errorf("get fn args: %w", err)
-	}
-
-	inputArgs := map[string][]byte{}
-	for _, fnArg := range fnArgs {
-		argName, err := fnArg.Name(ctx)
-		if err != nil {
-			return fmt.Errorf("get fn arg name: %w", err)
-		}
-		argValue, err := fnArg.Value(ctx)
-		if err != nil {
-			return fmt.Errorf("get fn arg value: %w", err)
-		}
-		inputArgs[argName] = []byte(argValue)
-	}
-
-	result, err := invoke(ctx, []byte(parentJson), parentName, fnName, inputArgs)
-	if err != nil {
-		return err
-	}
-	resultBytes, err := json.Marshal(result)
-	if err != nil {
-		return fmt.Errorf("marshal: %w", err)
-	}
-
-	if err := fnCall.ReturnValue(ctx, dagger.JSON(resultBytes)); err != nil {
-		return fmt.Errorf("store return value: %w", err)
-	}
-	return nil
-}
-func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName string, inputArgs map[string][]byte) (_ any, err error) {
 	_ = inputArgs
+	if parentName == "" {
+		switch fnName {
+		case "Alpine", "alpine":
+			parentName = "Alpine"
+			fnName = ""
+		}
+	}
 	switch parentName {
 	case "Alpine":
+		if fnName == "New" {
+			fnName = ""
+		}
 		switch fnName {
 		case "Container":
 			var parent Alpine
@@ -327,36 +207,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
-	case "":
-		return dag.Module().
-			WithDescription("A Dagger Module to integrate with Alpine Linux\n").
-			WithObject(
-				dag.TypeDef().WithObject("Alpine", dagger.TypeDefWithObjectOpts{Description: "An Alpine Linux configuration", SourceMap: dag.SourceMap("main.go", 85, 6)}).
-					WithFunction(
-						dag.Function("Container",
-							dag.TypeDef().WithObject("Container")).
-							WithDescription("Build an Alpine Linux container").
-							WithSourceMap(dag.SourceMap("main.go", 105, 1))).
-					WithField("Distro", dag.TypeDef().WithEnum("Distro"), dagger.TypeDefWithFieldOpts{Description: "The distro to use", SourceMap: dag.SourceMap("main.go", 87, 2)}).
-					WithField("Arch", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{Description: "The hardware architecture to build for", SourceMap: dag.SourceMap("main.go", 89, 2)}).
-					WithField("Branch", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{Description: "The Alpine branch to download packages from", SourceMap: dag.SourceMap("main.go", 91, 2)}).
-					WithField("Packages", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)), dagger.TypeDefWithFieldOpts{Description: "The APK packages to install", SourceMap: dag.SourceMap("main.go", 93, 2)}).
-					WithField("ExtraRepositories", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)), dagger.TypeDefWithFieldOpts{Description: "Extra repositories to add to the package resolver", SourceMap: dag.SourceMap("main.go", 95, 2)}).
-					WithField("ExtraKeyURLs", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)), dagger.TypeDefWithFieldOpts{Description: "Where to download additional keys from", SourceMap: dag.SourceMap("main.go", 97, 2)}).
-					WithConstructor(
-						dag.Function("New",
-							dag.TypeDef().WithObject("Alpine")).
-							WithSourceMap(dag.SourceMap("main.go", 29, 1)).
-							WithArg("arch", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Hardware architecture to build for", SourceMap: dag.SourceMap("main.go", 32, 2)}).
-							WithArg("branch", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Alpine branch to download packages from", SourceMap: dag.SourceMap("main.go", 36, 2), DefaultValue: dagger.JSON("\"edge\"")}).
-							WithArg("packages", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "APK packages to install", SourceMap: dag.SourceMap("main.go", 39, 2)}).
-							WithArg("extraRepositories", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Extra repositories to add to the package resolver", SourceMap: dag.SourceMap("main.go", 42, 2)}).
-							WithArg("extraKeyURLs", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Extra keys needed to authenticate the extra repositories", SourceMap: dag.SourceMap("main.go", 45, 2)}).
-							WithArg("distro", dag.TypeDef().WithEnum("Distro").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Alpine distribution to use", SourceMap: dag.SourceMap("main.go", 50, 2), DefaultValue: dagger.JSON("\"Alpine\"")}))).
-			WithEnum(
-				dag.TypeDef().WithEnum("Distro", dagger.TypeDefWithEnumOpts{SourceMap: dag.SourceMap("main.go", 22, 6)}).
-					WithEnumMember("Alpine", dagger.TypeDefWithEnumMemberOpts{Value: "ALPINE", SourceMap: dag.SourceMap("main.go", 25, 2)}).
-					WithEnumMember("Wolfi", dagger.TypeDefWithEnumMemberOpts{Value: "WOLFI", SourceMap: dag.SourceMap("main.go", 26, 2)})), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}
