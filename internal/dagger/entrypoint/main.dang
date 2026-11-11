@@ -36,6 +36,12 @@ type Entrypoint implements ModuleEntrypoint {
             .withDescription("Build an Alpine Linux container")
             .withSourceMap(sourceMap("main.go", 104, 1))
         )
+        .withFunction(
+          function("Resolve", typeDef.withListOf(typeDef.withKind(TypeDefKind.STRING_KIND)))
+            .withDescription("Resolve the packages Container would install, with all their dependencies,\nto the exact versions the repositories offer now. Each entry is\n\"name=version\", so passing the result back as packages installs this same\nset for as long as the repositories keep these versions.")
+            .withCachePolicy(FunctionCachePolicy.PerSession)
+            .withSourceMap(sourceMap("main.go", 145, 1))
+        )
         .withField("Distro", typeDef.withEnum("Distro"), description: "The distro to use", sourceMap: sourceMap("main.go", 86, 2))
         .withField("Arch", typeDef.withKind(TypeDefKind.STRING_KIND), description: "The hardware architecture to build for", sourceMap: sourceMap("main.go", 88, 2))
         .withField("Branch", typeDef.withKind(TypeDefKind.STRING_KIND), description: "The Alpine branch to download packages from", sourceMap: sourceMap("main.go", 90, 2))

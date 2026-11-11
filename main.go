@@ -102,6 +102,66 @@ type Alpine struct {
 
 // Build an Alpine Linux container
 func (m *Alpine) Container(ctx context.Context) (*dagger.Container, error) {
+	pkgs, err := m.resolve(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	ctr := core.NewContainer(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + m.GoArch)})
+	ctr, err = m.withPkgs(ctx, ctr, pkgs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create package container: %w", err)
+	}
+
+	// NOTE: "apk add" will not work in this container. Generally this is a good
+	// thing since it's more efficient to install all packages here and keep
+	// the output container immutable.
+	//
+	// However, if the need to support that arises the following would be needed:
+	// * /etc/apk/arch with the architecture written
+	// * /etc/apk/repositories with the list of repo urls
+	// * /etc/apk/world with each top level installed package name written
+	// * /etc/apk/keys/ with a file for each key
+	// * /lib/apk/db/installed with package metadata for each installed pkg
+	//   * the goapk.PackageToInstalled + AddInstalledPackage code helps here
+
+	ctr = ctr.WithEnvVariable("PATH", strings.Join([]string{
+		"/usr/local/sbin",
+		"/usr/local/bin",
+		"/usr/sbin",
+		"/usr/bin",
+		"/sbin",
+		"/bin",
+	}, ":"))
+
+	return ctr, nil
+}
+
+// Resolve the packages Container would install, with all their dependencies,
+// to the exact versions the repositories offer now. Each entry is
+// "name=version", so passing the result back as packages installs this same
+// set for as long as the repositories keep these versions.
+// +cache="session"
+func (m *Alpine) Resolve(ctx context.Context) ([]string, error) {
+	pkgs, err := m.resolve(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return packagePins(pkgs), nil
+}
+
+// packagePins returns each package as "name=version".
+func packagePins(pkgs []*goapk.RepositoryPackage) []string {
+	pins := make([]string, len(pkgs))
+	for i, pkg := range pkgs {
+		pins[i] = pkg.Name + "=" + pkg.Version
+	}
+	return pins
+}
+
+// resolve reads the repositories' current indexes and resolves the packages,
+// with all their dependencies, in install order.
+func (m *Alpine) resolve(ctx context.Context) ([]*goapk.RepositoryPackage, error) {
 	var branch *goapk.ReleaseBranch
 	var repos []string
 	var basePkgs []string
@@ -148,47 +208,16 @@ func (m *Alpine) Container(ctx context.Context) (*dagger.Container, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get indexes: %w", err)
 	}
-	pkgResolver := goapk.NewPkgResolver(ctx, indexes)
-
-	ctr := core.NewContainer(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + m.GoArch)})
 	allPkgs := make([]string, 0, len(m.Packages)+len(basePkgs))
 	allPkgs = append(allPkgs, basePkgs...)
 	allPkgs = append(allPkgs, m.Packages...)
-	ctr, err = m.withPkgs(ctx, ctr, pkgResolver, allPkgs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create package container: %w", err)
-	}
-
-	// NOTE: "apk add" will not work in this container. Generally this is a good
-	// thing since it's more efficient to install all packages here and keep
-	// the output container immutable.
-	//
-	// However, if the need to support that arises the following would be needed:
-	// * /etc/apk/arch with the architecture written
-	// * /etc/apk/repositories with the list of repo urls
-	// * /etc/apk/world with each top level installed package name written
-	// * /etc/apk/keys/ with a file for each key
-	// * /lib/apk/db/installed with package metadata for each installed pkg
-	//   * the goapk.PackageToInstalled + AddInstalledPackage code helps here
-
-	ctr = ctr.WithEnvVariable("PATH", strings.Join([]string{
-		"/usr/local/sbin",
-		"/usr/local/bin",
-		"/usr/sbin",
-		"/usr/bin",
-		"/sbin",
-		"/bin",
-	}, ":"))
-
-	return ctr, nil
+	return resolvePackages(ctx, indexes, allPkgs)
 }
 
-func (m *Alpine) withPkgs(
-	ctx context.Context,
-	ctr *dagger.Container,
-	pkgResolver *goapk.PkgResolver,
-	pkgs []string,
-) (*dagger.Container, error) {
+// resolvePackages resolves pkgs, with all their dependencies, against
+// indexes, in install order.
+func resolvePackages(ctx context.Context, indexes []goapk.NamedIndex, pkgs []string) ([]*goapk.RepositoryPackage, error) {
+	pkgResolver := goapk.NewPkgResolver(ctx, indexes)
 	repoPkgs, conflicts, err := pkgResolver.GetPackagesWithDependencies(ctx, pkgs, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get packages: %w", err)
@@ -199,7 +228,14 @@ func (m *Alpine) withPkgs(
 		// (i.e. it's dependent on musl not being installed because it wants glibc).
 		fmt.Printf("unfatal package conflicts: %v\n", conflicts)
 	}
+	return repoPkgs, nil
+}
 
+func (m *Alpine) withPkgs(
+	ctx context.Context,
+	ctr *dagger.Container,
+	repoPkgs []*goapk.RepositoryPackage,
+) (*dagger.Container, error) {
 	setupBase := core.NewContainer().From("busybox")
 
 	type apkPkg struct {
