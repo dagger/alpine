@@ -147,11 +147,16 @@ func (m *Alpine) Resolve(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	return packagePins(pkgs), nil
+}
+
+// packagePins returns each package as "name=version".
+func packagePins(pkgs []*goapk.RepositoryPackage) []string {
 	pins := make([]string, len(pkgs))
 	for i, pkg := range pkgs {
 		pins[i] = pkg.Name + "=" + pkg.Version
 	}
-	return pins, nil
+	return pins
 }
 
 // resolve reads the repositories' current indexes and resolves the packages,
@@ -203,12 +208,17 @@ func (m *Alpine) resolve(ctx context.Context) ([]*goapk.RepositoryPackage, error
 	if err != nil {
 		return nil, fmt.Errorf("failed to get indexes: %w", err)
 	}
-	pkgResolver := goapk.NewPkgResolver(ctx, indexes)
-
 	allPkgs := make([]string, 0, len(m.Packages)+len(basePkgs))
 	allPkgs = append(allPkgs, basePkgs...)
 	allPkgs = append(allPkgs, m.Packages...)
-	repoPkgs, conflicts, err := pkgResolver.GetPackagesWithDependencies(ctx, allPkgs, nil)
+	return resolvePackages(ctx, indexes, allPkgs)
+}
+
+// resolvePackages resolves pkgs, with all their dependencies, against
+// indexes, in install order.
+func resolvePackages(ctx context.Context, indexes []goapk.NamedIndex, pkgs []string) ([]*goapk.RepositoryPackage, error) {
+	pkgResolver := goapk.NewPkgResolver(ctx, indexes)
+	repoPkgs, conflicts, err := pkgResolver.GetPackagesWithDependencies(ctx, pkgs, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get packages: %w", err)
 	}
