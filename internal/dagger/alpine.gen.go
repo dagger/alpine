@@ -66,6 +66,17 @@ func (r *Alpine) Container() *Container {
 	return new(Container).WithGraphQLQuery(q)
 }
 
+// The packages' files, with all their dependencies, merged into one
+// directory with nothing run: no install scripts, no busybox links, and none
+// of the base packages Container adds. Nothing in it has to run on the
+// engine, so it can hold another architecture's files, such as a sysroot to
+// cross-compile against, or packages to add to an image with its own base.
+func (r *Alpine) Directory() *Directory {
+	q := r.query.Select("directory")
+
+	return new(Directory).WithGraphQLQuery(q)
+}
+
 // The distro to use
 func (r *Alpine) Distro(ctx context.Context) (AlpineDistro, error) {
 	if r.distro != nil {

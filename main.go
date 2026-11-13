@@ -102,7 +102,7 @@ type Alpine struct {
 
 // Build an Alpine Linux container
 func (m *Alpine) Container(ctx context.Context) (*dagger.Container, error) {
-	pkgs, err := m.resolve(ctx)
+	pkgs, err := m.resolve(ctx, true)
 	if err != nil {
 		return nil, err
 	}
@@ -143,11 +143,28 @@ func (m *Alpine) Container(ctx context.Context) (*dagger.Container, error) {
 // set for as long as the repositories keep these versions.
 // +cache="session"
 func (m *Alpine) Resolve(ctx context.Context) ([]string, error) {
-	pkgs, err := m.resolve(ctx)
+	pkgs, err := m.resolve(ctx, true)
 	if err != nil {
 		return nil, err
 	}
 	return packagePins(pkgs), nil
+}
+
+// The packages' files, with all their dependencies, merged into one
+// directory with nothing run: no install scripts, no busybox links, and none
+// of the base packages Container adds. Nothing in it has to run on the
+// engine, so it can hold another architecture's files, such as a sysroot to
+// cross-compile against, or packages to add to an image with its own base.
+func (m *Alpine) Directory(ctx context.Context) (*dagger.Directory, error) {
+	pkgs, err := m.resolve(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+	dir := core.NewDirectory()
+	for _, pkg := range m.unpackPkgs(pkgs) {
+		dir = dir.WithDirectory("/", pkg.dir)
+	}
+	return dir, nil
 }
 
 // packagePins returns each package as "name=version".
@@ -160,11 +177,11 @@ func packagePins(pkgs []*goapk.RepositoryPackage) []string {
 }
 
 // resolve reads the repositories' current indexes and resolves the packages,
-// with all their dependencies, in install order.
-func (m *Alpine) resolve(ctx context.Context) ([]*goapk.RepositoryPackage, error) {
+// with all their dependencies, in install order. withBase adds the distro's
+// base packages, which Container installs and Directory leaves out.
+func (m *Alpine) resolve(ctx context.Context, withBase bool) ([]*goapk.RepositoryPackage, error) {
 	var branch *goapk.ReleaseBranch
 	var repos []string
-	var basePkgs []string
 
 	switch m.Distro {
 	case DistroAlpine:
@@ -177,8 +194,6 @@ func (m *Alpine) resolve(ctx context.Context) ([]*goapk.RepositoryPackage, error
 			return nil, fmt.Errorf("failed to get alpine release %q", m.Branch)
 		}
 		repos = alpineRepositories(*branch)
-
-		basePkgs = []string{"alpine-baselayout", "alpine-release", "busybox", "apk-tools"}
 	case DistroWolfi:
 		releases := wolfiReleases()
 		if m.Branch != "edge" {
@@ -189,10 +204,6 @@ func (m *Alpine) resolve(ctx context.Context) ([]*goapk.RepositoryPackage, error
 			return nil, fmt.Errorf("failed to get wolfi release %q", m.Branch)
 		}
 		repos = wolfiRepositories()
-
-		basePkgs = []string{
-			"busybox",
-		}
 	default:
 		return nil, fmt.Errorf("unknown distro %q", m.Distro)
 	}
@@ -208,10 +219,25 @@ func (m *Alpine) resolve(ctx context.Context) ([]*goapk.RepositoryPackage, error
 	if err != nil {
 		return nil, fmt.Errorf("failed to get indexes: %w", err)
 	}
+	return resolvePackages(ctx, indexes, m.request(withBase))
+}
+
+// request is the packages to resolve: the configured ones, after the
+// distro's base packages when withBase is set.
+func (m *Alpine) request(withBase bool) []string {
+	var basePkgs []string
+	if withBase {
+		switch m.Distro {
+		case DistroAlpine:
+			basePkgs = []string{"alpine-baselayout", "alpine-release", "busybox", "apk-tools"}
+		case DistroWolfi:
+			basePkgs = []string{"busybox"}
+		}
+	}
 	allPkgs := make([]string, 0, len(m.Packages)+len(basePkgs))
 	allPkgs = append(allPkgs, basePkgs...)
 	allPkgs = append(allPkgs, m.Packages...)
-	return resolvePackages(ctx, indexes, allPkgs)
+	return allPkgs
 }
 
 // resolvePackages resolves pkgs, with all their dependencies, against
@@ -231,17 +257,16 @@ func resolvePackages(ctx context.Context, indexes []goapk.NamedIndex, pkgs []str
 	return repoPkgs, nil
 }
 
-func (m *Alpine) withPkgs(
-	ctx context.Context,
-	ctr *dagger.Container,
-	repoPkgs []*goapk.RepositoryPackage,
-) (*dagger.Container, error) {
-	setupBase := core.NewContainer().From("busybox")
+// apkPkg is one package, unpacked.
+type apkPkg struct {
+	name string
+	dir  *dagger.Directory
+}
 
-	type apkPkg struct {
-		name string
-		dir  *dagger.Directory
-	}
+// unpackPkgs unpacks each package on its own, on the engine's architecture,
+// whatever the packages' architecture: unpacking runs nothing from them.
+func (m *Alpine) unpackPkgs(repoPkgs []*goapk.RepositoryPackage) []*apkPkg {
+	setupBase := core.NewContainer().From("busybox")
 
 	// Nothing here reads a package, so nothing is unpacked until something
 	// needs the container's files. Each package's unpack stays its own result,
@@ -283,6 +308,15 @@ func (m *Alpine) withPkgs(
 			dir:  dir,
 		}
 	}
+	return alpinePkgs
+}
+
+func (m *Alpine) withPkgs(
+	ctx context.Context,
+	ctr *dagger.Container,
+	repoPkgs []*goapk.RepositoryPackage,
+) (*dagger.Container, error) {
+	alpinePkgs := m.unpackPkgs(repoPkgs)
 
 	// Layering a package onto a container that has nothing left to run copies
 	// it at once, so the packages up to busybox are stacked as a directory and

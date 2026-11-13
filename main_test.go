@@ -96,3 +96,18 @@ func TestResolvedPinsHoldAfterAPublish(t *testing.T) {
 		t.Errorf("resolving the pins after the publish gave %v, want %v", got, pins)
 	}
 }
+
+func TestDirectoryLeavesOutTheBasePackages(t *testing.T) {
+	t.Parallel()
+
+	m := &Alpine{Distro: DistroWolfi, Packages: []string{"git"}}
+
+	// Directory's request: git and what it needs, and no busybox.
+	if got := resolvePins(t, baseIndex, m.request(false)); !slices.Equal(got, []string{"git=2.50.0-r0", "libcurl=8.0.0-r0"}) {
+		t.Errorf("Directory resolved %v, want git and libcurl only", got)
+	}
+	// Container's request adds the base packages.
+	if got := resolvePins(t, baseIndex, m.request(true)); !slices.Contains(got, "busybox=1.37.0-r0") {
+		t.Errorf("Container resolved %v, want busybox among them", got)
+	}
+}

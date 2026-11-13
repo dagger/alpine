@@ -37,6 +37,11 @@ type Entrypoint implements ModuleEntrypoint {
             .withSourceMap(sourceMap("main.go", 104, 1))
         )
         .withFunction(
+          function("Directory", typeDef.withObject("Directory"))
+            .withDescription("The packages' files, with all their dependencies, merged into one\ndirectory with nothing run: no install scripts, no busybox links, and none\nof the base packages Container adds. Nothing in it has to run on the\nengine, so it can hold another architecture's files, such as a sysroot to\ncross-compile against, or packages to add to an image with its own base.")
+            .withSourceMap(sourceMap("main.go", 158, 1))
+        )
+        .withFunction(
           function("Resolve", typeDef.withListOf(typeDef.withKind(TypeDefKind.STRING_KIND)))
             .withDescription("Resolve the packages Container would install, with all their dependencies,\nto the exact versions the repositories offer now. Each entry is\n\"name=version\", so passing the result back as packages installs this same\nset for as long as the repositories keep these versions.")
             .withCachePolicy(FunctionCachePolicy.PerSession)
