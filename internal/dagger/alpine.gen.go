@@ -66,6 +66,17 @@ func (r *Alpine) Container() *Container {
 	return new(Container).WithGraphQLQuery(q)
 }
 
+// The packages' files, with all their dependencies, merged into one
+// directory with nothing run: no install scripts, no busybox links, and none
+// of the base packages Container adds. Nothing in it has to run on the
+// engine, so it can hold another architecture's files, such as a sysroot to
+// cross-compile against, or packages to add to an image with its own base.
+func (r *Alpine) Directory() *Directory {
+	q := r.query.Select("directory")
+
+	return new(Directory).WithGraphQLQuery(q)
+}
+
 // The distro to use
 func (r *Alpine) Distro(ctx context.Context) (AlpineDistro, error) {
 	if r.distro != nil {
@@ -157,6 +168,19 @@ func (r *Alpine) UnmarshalJSON(bs []byte) error {
 // The APK packages to install
 func (r *Alpine) Packages(ctx context.Context) ([]string, error) {
 	q := r.query.Select("packages")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Resolve the packages Container would install, with all their dependencies,
+// to the exact versions the repositories offer now. Each entry is
+// "name=version", so passing the result back as packages installs this same
+// set for as long as the repositories keep these versions.
+func (r *Alpine) Resolve(ctx context.Context) ([]string, error) {
+	q := r.query.Select("resolve")
 
 	var response []string
 
